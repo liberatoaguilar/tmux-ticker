@@ -7,10 +7,7 @@ color, rainbow), and shows a house message when the slot is idle.
 The client is **read-only and inert**: it fetches the current message over HTTPS and
 draws it as plain colored text. It never evaluates anything the server sends.
 
-```
-┃ ● LIVE · superchat slot                                                      ┃
-┃ Ship it with aguilabs.com!   •   Ship it with aguilabs.com!   •   Ship it w… ┃
-```
+![tmux-superchat marquee scrolling across the top of a terminal window](docs/marquee.png)
 
 ## Install
 
