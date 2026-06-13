@@ -89,7 +89,7 @@ tone_sgr() {
   fi
 }
 T_PITCH="$(tone_sgr 1E7A3C 32)"; T_GOLD="$(tone_sgr D4A017 33)"
-T_CHALK="$(tone_sgr F2F0E6 37)"; T_ALERT="$(tone_sgr E8413C 31)"; T_DIM="$(tone_sgr 6B7280 90)"
+T_CHALK="$(tone_sgr F2F0E6 37)"; T_ALERT="$(tone_sgr E8413C 31)"; T_DIM="$(tone_sgr 9099A8 90)"
 # Goal flash: full line inverted, alert bg + chalk fg — the ONLY flash in the
 # product (paid styles keep their own distinct effects; nothing else ever blinks).
 if [ "$TRUECOLOR" = 1 ]; then
