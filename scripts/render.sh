@@ -49,8 +49,14 @@ esac
 RB_PALETTE=( "#bf616a" "#d08770" "#ebcb8b" "#a3be8c" "#88c0d0" "#81a1c1" "#b48ead" )
 
 trap ':' USR1                       # USR1 interrupts the sleep -> immediate refetch
-trap 'printf "\033[?25h"' EXIT      # restore cursor
+trap 'printf "\033[?25h\033[?7h"' EXIT   # restore cursor + autowrap
 printf '\033[?25l'                  # hide cursor
+# Disable autowrap (DECAWM) for this 1-row pane. We slice the scroll window by
+# CODE POINTS, but double-width chars (emoji ball, flag pairs) make the line a
+# few DISPLAY columns wider than the pane — with autowrap on, that overflow wraps
+# to a 2nd row and tmux scrolls the single row away, blanking the marquee. Off,
+# the overflow is harmlessly clipped at the right edge (\033[K still clears).
+printf '\033[?7l'
 
 set_pane_option "$(tmux display-message -p '#{pane_id}')" "$RENDER_PID_OPTION" "$$"
 
