@@ -10,8 +10,8 @@ default_height="1"                              # @superchat-height (rows)
 default_poll_s="0.12"                           # scroll frame interval
 default_fetch_s="2"                             # /api/slot re-fetch interval
 default_flags="auto"                            # @superchat-flags : auto | on | off — emoji team
-                                                # flags in WC items (auto: on for Darwin only;
-                                                # Linux flag glyphs are unreliable)
+                                                # flags in WC items (auto: macOS + tmux<3.6 only;
+                                                # they flicker on tmux 3.6+, poor glyphs on Linux)
 
 # internal markers / options (namespaced to coexist with other plugins)
 MARQUEE_MARKER="@superchat_marquee"

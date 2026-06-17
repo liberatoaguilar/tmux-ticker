@@ -52,7 +52,7 @@ All options are set in `~/.tmux.conf` with `set -g`:
 | `@superchat-height` | `1` | marquee height in rows |
 | `@superchat-poll-s` | `0.12` | scroll-frame interval (seconds) |
 | `@superchat-fetch-s` | `2` | re-fetch interval (seconds) |
-| `@superchat-flags` | `auto` | emoji team flags in World Cup items: `auto` (on for macOS, off on Linux where flag glyphs are unreliable), `on`, or `off` |
+| `@superchat-flags` | `auto` | emoji team flags in World Cup items: `auto` (on for macOS with tmux < 3.6; off on Linux and on tmux 3.6+, where flags flicker / render poorly), `on` to force, or `off` |
 
 ## World Cup scores
 
