@@ -64,26 +64,31 @@ score items per message.
 
 ### What it looks like
 
-Server-rendered example items (a goal flashes inverted-red the instant it lands,
-then settles into the rotation; tones: green pitch, gold group, white score, red
-goal/live, dim upcoming/final):
+The ticker rotates render-ready items between the messages — live scores, goals,
+group standings, upcoming fixtures and recent finals.
 
-```text
-GOAL! 🇦🇹 AUT 1–0 JOR 🇯🇴  21'
-⚽ 🇦🇹 AUT 1–0 JOR 🇯🇴  ● LIVE 22'
-🇦🇷 ARG v FRA 🇫🇷  Sat 19:00
-FT 🇲🇽 MEX 2–0 RSA 🇿🇦
-Group C · ARG 9 · POL 4 · MEX 4 · HAI 0
-```
+A live score (green team, red `● LIVE` badge, white minute):
+
+![Live World Cup score scrolling in the tmux marquee](docs/wc-live.png)
+
+A goal flashes inverted-red the instant it lands, then settles into the rotation:
+
+![Goal flash in the marquee](docs/wc-goal.png)
+
+Upcoming fixtures, recent finals, and group standings:
+
+![Upcoming fixture](docs/wc-upcoming.png)
+
+![Final score](docs/wc-final.png)
+
+![Group standings](docs/wc-standings.png)
 
 Flags appear where the terminal renders them cleanly. On tmux 3.6+ the ⚽ ball
-stays but flags drop to codes (`⚽ AUT 1–0 JOR  ● LIVE 22'`); `@superchat-flags
-off` is plain ASCII (`* AUT 1-0 JOR  ● LIVE 22'`).
+stays but team flags drop to codes (as shown above); `@superchat-flags off` is
+plain ASCII.
 
-It rides the same hosted slot feed, so there is nothing to install or enable. Team
-names show an emoji flag where one exists; if your terminal renders them poorly, set
-`@superchat-flags off` (see the table above). When the tournament ends the ticker goes
-quiet and the marquee returns to messages only.
+It rides the same hosted slot feed, so there is nothing to install or enable. When the
+tournament ends the ticker goes quiet and the marquee returns to messages only.
 
 ## Keybinding
 
