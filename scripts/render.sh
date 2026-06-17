@@ -24,27 +24,39 @@ FETCH="$(get_tmux_option @superchat-fetch-s "$default_fetch_s")"
 IID="$("$CURRENT_DIR/install_id.sh")"
 RST=$'\033[0m'
 
-# Emoji team flags: @superchat-flags auto|on|off. `auto` enables them only where
-# they render cleanly: on macOS (Linux flag glyphs are unreliable) AND on
-# tmux < 3.6. tmux 3.6+ repaints a regional-indicator flag cluster on EVERY
-# redraw, so a scrolling flag (the marquee re-emits the whole line each frame)
-# flickers badly and no escape sequence avoids it -- `auto` drops to codes there.
-# `on` forces flags anyway. Decided ONCE at startup; seg/segPlain never mixed.
-flags_render_cleanly() {
-  [ "$(uname 2>/dev/null)" = "Darwin" ] || return 1   # non-macOS: glyphs unreliable
+# Emoji team flags: @superchat-flags auto|on|off.
+#   on   -> full emoji including team flags (force).
+#   off  -> ASCII only, no emoji.
+#   auto -> emoji on (the ball + en-dash), but team FLAGS depend on the terminal:
+#           non-macOS          -> ASCII (Linux emoji/flag glyphs are unreliable);
+#           macOS + tmux < 3.6  -> flags too (they render fine);
+#           macOS + tmux >= 3.6 -> ball/en-dash kept, FLAGS stripped. tmux 3.6+
+#           repaints a regional-indicator flag cluster on every redraw, so a
+#           scrolling flag flickers (the marquee re-emits each frame) and no
+#           escape sequence avoids it; the single-codepoint ball is unaffected.
+# Decided ONCE at startup: SEGF picks the wire variant, STRIP_FLAGS drops flag
+# emoji from it (jq gsub in parse_carousel). seg/segPlain are never mixed.
+tmux_ge_36() {   # 0 (true) when tmux >= 3.6 -- the versions that flicker flags
   local v maj rest min
   v="$(tmux -V 2>/dev/null)"; v="${v##* }"            # "tmux 3.6b" -> "3.6b"
   maj="${v%%.*}"; rest="${v#*.}"; min="${rest%%[!0-9]*}"
-  case "$maj" in ""|*[!0-9]*) return 0 ;; esac        # unparseable version: assume clean
+  case "$maj" in ""|*[!0-9]*) return 1 ;; esac        # unparseable -> assume < 3.6
   case "$min" in ""|*[!0-9]*) min=0 ;; esac
-  { [ "$maj" -gt 3 ] || { [ "$maj" -eq 3 ] && [ "$min" -ge 6 ]; }; } && return 1
-  return 0
+  [ "$maj" -gt 3 ] || { [ "$maj" -eq 3 ] && [ "$min" -ge 6 ]; }
 }
+SEGF="seg"; STRIP_FLAGS=0
 case "$(get_tmux_option @superchat-flags "$default_flags")" in
   on)  SEGF="seg" ;;
   off) SEGF="segPlain" ;;
-  *)   if flags_render_cleanly; then SEGF="seg"; else SEGF="segPlain"; fi ;;
+  *)   if [ "$(uname 2>/dev/null)" != "Darwin" ]; then SEGF="segPlain"
+       elif tmux_ge_36; then STRIP_FLAGS=1
+       fi ;;
 esac
+# Regional-indicator flag pair (+ one adjacent space), stripped from the emoji
+# variant when STRIP_FLAGS=1. Range is literal U+1F1E6..U+1F1FF bytes -- jq 1.7
+# rejects \u{}/\x{} escapes in regex.
+_RILO=$'\xf0\x9f\x87\xa6'; _RIHI=$'\xf0\x9f\x87\xbf'
+FLAG_RE=" [$_RILO-$_RIHI]{2}|[$_RILO-$_RIHI]{2} "
 
 # Truecolor detection. Inside tmux $COLORTERM is frequently unset even when the
 # terminal supports 24-bit, which would drop us to a 16-color path that collapses
@@ -244,10 +256,10 @@ build_wc_item() {
 parse_carousel() {
   WC_KIND=(); WC_KEY=(); WC_SEGS=(); wc_count=0
   local lines line kind rest key segs
-  lines="$(printf '%s' "$json" | jq -r --arg segf "$SEGF" '
+  lines="$(printf '%s' "$json" | jq -r --arg segf "$SEGF" --arg strip "$STRIP_FLAGS" --arg flagre "$FLAG_RE" '
     (.carousel // [])[]?
     | [ (.kind // ""), (.key // ""), ((.[$segf] // [])[]? | (.tone // ""), (.t // "")) ]
-    | map(tostring | explode | map(if . < 32 or (. >= 127 and . <= 159) then 32 else . end) | implode)
+    | map(tostring | (if $strip == "1" then gsub($flagre; "") else . end) | explode | map(if . < 32 or (. >= 127 and . <= 159) then 32 else . end) | implode)
     | join([31] | implode)' 2>/dev/null)"
   [ -n "$lines" ] || return 0
   while IFS= read -r line; do
