@@ -17,6 +17,29 @@ set -u
 LC_NUMERIC=C
 export LC_NUMERIC
 
+# round_half_up VALUE DECIMALS — fixed-decimal string that byte-matches JS
+# Number.prototype.toFixed (the wire oracle in src/lib/markets/carousel.ts:
+# price.toFixed(2), Math.abs(changePct).toFixed(1)). NOT `printf '%.Nf'`:
+# printf rounds half-to-EVEN, toFixed rounds half AWAY from zero, so on an
+# exact binary tie (e.g. dp=4.25 -> printf "4.2" but toFixed "4.3"; price
+# 10.125 -> printf "10.12" vs toFixed "10.13") the two diverge and the wire
+# string mismatches — quarter-percent moves and eighth-dollar prices hit this.
+# We instead print the double at high precision (revealing its true decimal,
+# so genuine ties show "...5000" while near-ties like 4.35=4.34999… don't),
+# then round-half-up on the exact digits with integer math. VALUE must be
+# non-negative (callers pass the price and |dp|). LC_NUMERIC=C keeps the "."
+# separator the ${s%.*}/${s#*.} splits assume.
+round_half_up() {
+  local val="$1" f="$2" s ip frac keep rest first m
+  s=$(printf "%.$((f + 20))f" "$val" 2>/dev/null) || return 1
+  ip=${s%.*}; frac=${s#*.}
+  keep=${frac:0:f}; rest=${frac:f}; first=${rest:0:1}
+  m=$(( ip * (10 ** f) + 10#${keep:-0} ))
+  [ -n "$first" ] && [ "$first" -ge 5 ] && m=$((m + 1))
+  if [ "$f" -eq 0 ]; then printf '%d' "$m"
+  else printf '%d.%0*d' $((m / (10 ** f))) "$f" $((m % (10 ** f))); fi
+}
+
 CACHE_FILE="${1:-}"
 SYMBOLS_CSV="${2:-}"
 HERO_RAW="${3:-}"
@@ -112,9 +135,9 @@ fetch_symbol() {
   [ "$line" = "SKIP" ] && return 0
   price=${line%%$'\t'*}; line=${line#*$'\t'}
   dp=${line%%$'\t'*};    dir=${line##*$'\t'}
-  pricestr=$(printf '%.2f' "$price" 2>/dev/null) || return 0
+  pricestr=$(round_half_up "$price" 2) || return 0
   abs=${dp#-}
-  pctstr=$(printf '%.1f' "$abs" 2>/dev/null) || return 0
+  pctstr=$(round_half_up "$abs" 1) || return 0
   RSYM[$NRES]=$S; RPRICE[$NRES]=$pricestr; RPCT[$NRES]=$pctstr; RDIR[$NRES]=$dir
   NRES=$((NRES + 1))
 }
