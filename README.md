@@ -2,10 +2,16 @@
 
 Delayed stock quotes in your tmux status ribbon — every quote labeled with its delay.
 
-A one-row scrolling ticker pinned to the top of every tmux window. It polls a hosted
-feed and rotates delayed market quotes across the top of your terminal; between the
-quotes it renders a single global message slot (bold, italic, color, rainbow), and
-shows a house message when the slot is idle.
+A one-row scrolling ticker pinned to the top of every tmux window. It polls a
+tmux-ticker feed and rotates delayed market quotes across the top of your terminal;
+between the quotes it renders a single global message slot (bold, italic, color,
+rainbow), and shows a house message when the slot is idle.
+
+> [!IMPORTANT]
+> **Bring your own feed and API key.** There is no public hosted feed: quotes require a
+> self-hosted tmux-ticker server deployment configured with **your own** market-data API
+> key, with `@ticker-api` pointed at it. Quotes are for your own personal/internal use on
+> your own terminals; you are responsible for your data provider's terms of service.
 
 The client is **read-only and inert**: it fetches quotes and the current message over
 HTTPS and draws them as plain colored text. It never evaluates anything the server sends.
