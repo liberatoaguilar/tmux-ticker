@@ -143,34 +143,34 @@ fetch_symbol() {
 }
 
 # 7. One quote WireItem (kind quote_hero when hero=true). Mirrors quoteSegs():
-# ★/* star (gold), chalk "SYM PRICE", the change seg, gold "  ·LABEL" last.
+# ★/* star (gold), chalk "SYM PRICE", the change seg, gold "  · LABEL" last.
 quote_item() {
   local sym="$1" price="$2" pct="$3" dir="$4" hero="$5"
   jq -cn --arg sym "$sym" --arg price "$price" --arg pct "$pct" \
          --arg dir "$dir" --arg label "$DELAY_LABEL" --argjson hero "$hero" '
-    ( if   $dir == "up"   then {a:"▲", p:"+", tone:"pitch"}
-      elif $dir == "down" then {a:"▼", p:"-", tone:"alert"}
+    ( if   $dir == "up"   then {a:"▲ ", p:"+ ", tone:"pitch"}
+      elif $dir == "down" then {a:"▼ ", p:"- ", tone:"alert"}
       else                     {a:"",  p:"",  tone:"dim"}   end) as $c |
     { kind: (if $hero then "quote_hero" else "quote" end),
       key: ("q:" + $sym),
       seg: ( (if $hero then [{t:"★ ", tone:"gold"}] else [] end)
              + [ {t: ($sym + " " + $price), tone:"chalk"},
                  {t: (" " + $c.a + $pct + "%"), tone: $c.tone},
-                 {t: ("  ·" + $label), tone:"gold"} ] ),
+                 {t: ("  · " + $label), tone:"gold"} ] ),
       segPlain: ( (if $hero then [{t:"* ", tone:"gold"}] else [] end)
              + [ {t: ($sym + " " + $price), tone:"chalk"},
                  {t: (" " + $c.p + $pct + "%"), tone: $c.tone},
-                 {t: ("  -" + $label), tone:"gold"} ] ) }'
+                 {t: ("  - " + $label), tone:"gold"} ] ) }'
 }
 
 # 7. The single closed-market WireItem. Mirrors closedSegs(): dim price, gold
-# "  ·mkt closed" tag — never a bare price.
+# "  · mkt closed" tag — never a bare price.
 closed_item() {
   local sym="$1" price="$2"
   jq -cn --arg sym "$sym" --arg price "$price" '
     { kind:"mkt_closed", key:"mkt:closed",
-      seg:      [ {t:($sym+" "+$price), tone:"dim"}, {t:"  ·mkt closed", tone:"gold"} ],
-      segPlain: [ {t:($sym+" "+$price), tone:"dim"}, {t:"  -mkt closed", tone:"gold"} ] }'
+      seg:      [ {t:($sym+" "+$price), tone:"dim"}, {t:"  · mkt closed", tone:"gold"} ],
+      segPlain: [ {t:($sym+" "+$price), tone:"dim"}, {t:"  - mkt closed", tone:"gold"} ] }'
 }
 
 # Assemble the carousel (one compact JSON object per line, for `jq -s`).
