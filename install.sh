@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tmux-superchat installer — fetches the plugin into ~/.config/tmux-superchat and
+# tmux-ticker installer — fetches the plugin into ~/.config/tmux-ticker and
 # prints the line to add to ~/.tmux.conf. First-party curl|bash, same category as
 # rustup / homebrew / TPM: a readable, unobfuscated script you fetched over HTTPS.
 #
@@ -10,8 +10,8 @@
 # (render.sh falls back to a static message when jq is absent).
 set -euo pipefail
 
-DIR="${XDG_CONFIG_HOME:-$HOME/.config}/tmux-superchat"
-API="${SUPERCHAT_API:-https://superchat.aguilabs.com}"
+DIR="${XDG_CONFIG_HOME:-$HOME/.config}/tmux-ticker"
+API="${TICKER_API:-https://ticker.aguilabs.com}"
 mkdir -p "$DIR"
 
 # Stable anonymous id — random bytes only. No fingerprinting, no machine name.
@@ -20,7 +20,7 @@ mkdir -p "$DIR"
 ID="$(cat "$DIR/id")"
 
 # Fetch the plugin at a PINNED tag (never main).
-curl -fsSL https://github.com/liberatoaguilar/tmux-superchat/archive/refs/tags/v1.0.0.tar.gz \
+curl -fsSL https://github.com/liberatoaguilar/tmux-ticker/archive/refs/tags/v1.0.0.tar.gz \
   | tar -xz --strip-components=1 -C "$DIR"
 
 # Fire the install event — anonymous, best-effort, never blocks the install.
@@ -30,5 +30,5 @@ curl -fsS -X POST "$API/api/event" \
   >/dev/null 2>&1 || true
 
 echo "Installed to $DIR"
-echo "Add to ~/.tmux.conf:  run-shell $DIR/superchat.tmux"
+echo "Add to ~/.tmux.conf:  run-shell $DIR/ticker.tmux"
 echo "Toggle:  prefix + a"

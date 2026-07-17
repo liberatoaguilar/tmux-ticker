@@ -1,44 +1,45 @@
-# tmux-superchat
+# tmux-ticker
 
-A one-row scrolling **superchat** marquee pinned to the top of every tmux window. It
-polls a hosted slot, renders whatever styled message is currently live (bold, italic,
-color, rainbow), and shows a house message when the slot is idle.
+Delayed stock quotes in your tmux status ribbon — every quote labeled with its delay.
 
-**For now it also doubles as a live World Cup ticker:** while the 2026 tournament is on,
-the marquee interleaves live scores, goal flashes, group standings, and upcoming
-fixtures between the messages. There is nothing to set up — the scores ride the same
-slot feed; see [World Cup scores](#world-cup-scores).
+A one-row scrolling ticker pinned to the top of every tmux window. It polls a hosted
+feed and rotates delayed market quotes across the top of your terminal; between the
+quotes it renders a single global message slot (bold, italic, color, rainbow), and
+shows a house message when the slot is idle.
 
-The client is **read-only and inert**: it fetches the current message over HTTPS and
-draws it as plain colored text. It never evaluates anything the server sends.
+The client is **read-only and inert**: it fetches quotes and the current message over
+HTTPS and draws them as plain colored text. It never evaluates anything the server sends.
 
-![tmux-superchat marquee scrolling across the top of a terminal window](docs/marquee.png)
+![tmux-ticker scrolling across the top of a terminal window](docs/marquee.png)
 
 ## Install
 
 **[TPM](https://github.com/tmux-plugins/tpm)** — add to `~/.tmux.conf`, then press `prefix + I`:
 
 ```tmux
-set -g @plugin 'liberatoaguilar/tmux-superchat'
+set -g @plugin 'liberatoaguilar/tmux-ticker'
 ```
 
 **One-liner** (no TPM):
 
 ```bash
-curl -fsSL https://superchat.aguilabs.com/install.sh | bash
+curl -fsSL https://ticker.aguilabs.com/install.sh | bash
 ```
 
 Then add the printed line to `~/.tmux.conf` and reload:
 
 ```tmux
-run-shell ~/.config/tmux-superchat/superchat.tmux
+run-shell ~/.config/tmux-ticker/ticker.tmux
 ```
+
+The installer fetches a pinned release tag (a `v*` tarball published with the first
+release), never `main`.
 
 ## Requirements
 
 `tmux`, `bash`, `curl`, and `jq` on your `PATH` (standard on macOS/Linux dev boxes).
-Without `jq` the marquee still runs but shows a static fallback message instead of the
-live slot.
+Without `jq` the ticker still runs but shows a static fallback message instead of the
+live feed.
 
 ## Configuration
 
@@ -46,67 +47,38 @@ All options are set in `~/.tmux.conf` with `set -g`:
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `@superchat-api` | `https://superchat.aguilabs.com` | API origin the client polls |
-| `@superchat-toggle-key` | `a` | toggle key, used as `prefix + <key>` |
-| `@superchat-position` | `top` | `top` to enable, `off` to disable registration entirely |
-| `@superchat-height` | `1` | marquee height in rows |
-| `@superchat-poll-s` | `0.12` | scroll-frame interval (seconds) |
-| `@superchat-fetch-s` | `2` | re-fetch interval (seconds) |
-| `@superchat-flags` | `auto` | emoji team flags in World Cup items. `auto`: flags on macOS + tmux < 3.6; on tmux 3.6+ the ⚽ ball stays but flags are dropped (they flicker); on Linux, no emoji. `on` forces flags; `off` is plain ASCII |
+| `@ticker-api` | `https://ticker.aguilabs.com` | API origin the client polls |
+| `@ticker-toggle-key` | `a` | toggle key, used as `prefix + <key>` |
+| `@ticker-position` | `top` | `top` to enable, `off` to disable registration entirely |
+| `@ticker-height` | `1` | ticker height in rows |
+| `@ticker-poll-s` | `0.12` | scroll-frame interval (seconds) |
+| `@ticker-fetch-s` | `2` | re-fetch interval (seconds) |
+| `@ticker-emoji` | `auto` | `auto`\|`on`\|`off` — emoji glyphs in quote items. `off` is plain ASCII; `auto`/`on` use the emoji variants |
+| `@ticker-markets` | `on` | `on`\|`off` — rotate the markets carousel between slot messages. `off` shows the slot message only |
 
-## World Cup scores
+## Market data
 
-While the 2026 World Cup is on, the marquee doubles as a live scoreboard. Between the
-paid and house messages it rotates live scores (with the match minute, or a LIVE badge
-for in-progress games), goal flashes (the line briefly inverts the instant a goal
-lands), group standings, recent final scores, and upcoming fixtures, roughly three
-score items per message.
-
-### What it looks like
-
-The ticker rotates render-ready items between the messages — live scores, goals,
-group standings, upcoming fixtures and recent finals.
-
-A live score (green team, red `● LIVE` badge, white minute):
-
-![Live World Cup score scrolling in the tmux marquee](docs/wc-live.png)
-
-A goal flashes inverted-red the instant it lands, then settles into the rotation:
-
-![Goal flash in the marquee](docs/wc-goal.png)
-
-Upcoming fixtures, recent finals, and group standings:
-
-![Upcoming fixture](docs/wc-upcoming.png)
-
-![Final score](docs/wc-final.png)
-
-![Group standings](docs/wc-standings.png)
-
-Flags appear where the terminal renders them cleanly. On tmux 3.6+ the ⚽ ball
-stays but team flags drop to codes (as shown above); `@superchat-flags off` is
-plain ASCII.
-
-It rides the same hosted slot feed, so there is nothing to install or enable. When the
-tournament ends the ticker goes quiet and the marquee returns to messages only.
+Quotes shown by the ticker are **delayed** (typically 15+ minutes) and each is labeled
+with its delay (or `mkt closed` outside trading hours). They are provided for
+informational purposes only and are **not investment advice**.
 
 ## Keybinding
 
-`prefix + a` toggles the marquee across **all** windows (creates/kills the panes).
+`prefix + a` toggles the ticker across **all** windows (creates/kills the panes).
 
 ## Running alongside other plugins
 
-`tmux-superchat` owns only the **top row** of each window and registers its hooks with
+`tmux-ticker` owns only the **top row** of each window and registers its hooks with
 `set-hook -ga` (append), so it coexists with other tmux plugins that own a different
 pane region — load order doesn't matter and it won't clobber their hooks.
 
 ## Uninstall
 
 ```bash
-~/.config/tmux-superchat/scripts/uninstall.sh
+~/.config/tmux-ticker/scripts/uninstall.sh
 ```
 
-This kills every marquee pane and disables the plugin without disturbing other plugins'
+This kills every ticker pane and disables the plugin without disturbing other plugins'
 shared hooks. Then remove the `@plugin` / `run-shell` line and reload tmux.
 
 ## License

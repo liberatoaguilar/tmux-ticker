@@ -18,17 +18,17 @@ get_pane_option() {
 set_pane_option() { tmux set-option -p -t "$1" "$2" "$3"; }
 
 find_marquee_pane() {
-  tmux list-panes -t "$1" -F '#{pane_id} #{@superchat_marquee}' 2>/dev/null | awk '$2=="1"{print $1; exit}'
+  tmux list-panes -t "$1" -F '#{pane_id} #{@ticker_marquee}' 2>/dev/null | awk '$2=="1"{print $1; exit}'
 }
 
 window_has_marquee() { [ -n "$(find_marquee_pane "$1")" ]; }
 
 list_marquee_panes() {
-  tmux list-panes -a -F '#{pane_id} #{@superchat_marquee}' 2>/dev/null | awk '$2=="1"{print $1}'
+  tmux list-panes -a -F '#{pane_id} #{@ticker_marquee}' 2>/dev/null | awk '$2=="1"{print $1}'
 }
 
-superchat_enabled() {
-  [ "$(get_tmux_option @superchat_enabled 1)" = "1" ] && [ "$(get_tmux_option @superchat-position top)" != "off" ]
+ticker_enabled() {
+  [ "$(get_tmux_option @ticker_enabled 1)" = "1" ] && [ "$(get_tmux_option @ticker-position top)" != "off" ]
 }
 
 # Current epoch milliseconds (for the refresh debounce). BSD/macOS `date` does NOT

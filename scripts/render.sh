@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # render.sh — continuous scroll + periodic /api/slot fetch + /api/beat (carousel-derived).
-# Long-lived loop in the marquee pane. Stores $$ in @superchat_render_pid so refresh.sh
+# Long-lived loop in the marquee pane. Stores $$ in @ticker_render_pid so refresh.sh
 # can SIGUSR1 it; hides the cursor; restores it on exit. Renders INERT text only —
 # nothing here is ever executed.
 #
@@ -8,61 +8,33 @@
 # same flags the compose UI offers. We compose a full SGR sequence per frame so
 # every style actually renders in the terminal (v1.0 only honored color).
 #
-# World Cup carousel (v1.2): /api/slot may also carry `.carousel` — render-ready
-# items ({kind,key,seg[],segPlain[]}, tones pitch|gold|chalk|alert|dim). When
-# present we rotate 3 WC items : 1 slot item (the slot keeps the exact v1.0 paid/
-# house render path above), each dwelling ~6-10s. An unseen `goal` key interrupts
-# immediately with the product's ONLY flash. Missing/empty carousel ⇒ pure v1.0
-# behavior, so old servers without the field keep working.
+# Markets carousel: /api/slot may also carry `.carousel` — render-ready items
+# ({kind,key,seg[],segPlain[]}, tones pitch|gold|chalk|alert|dim). When present we
+# rotate 3 carousel items : 1 slot item (the slot keeps the exact v1.0 paid/house
+# render path above), each dwelling ~6-10s. Missing/empty carousel ⇒ pure v1.0
+# behavior, so old servers without the field keep working. @ticker-markets off
+# skips the carousel parse entirely (⇒ pure v1.0 slot scroll).
 export LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
 CURRENT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 . "$CURRENT_DIR/variables.sh"; . "$CURRENT_DIR/helpers.sh"
 
-API="$(get_tmux_option @superchat-api "$default_api")"
-POLL="$(get_tmux_option @superchat-poll-s "$default_poll_s")"
-FETCH="$(get_tmux_option @superchat-fetch-s "$default_fetch_s")"
+API="$(get_tmux_option @ticker-api "$default_api")"
+POLL="$(get_tmux_option @ticker-poll-s "$default_poll_s")"
+FETCH="$(get_tmux_option @ticker-fetch-s "$default_fetch_s")"
+MARKETS="$(get_tmux_option @ticker-markets "$default_markets")"
 IID="$("$CURRENT_DIR/install_id.sh")"
 RST=$'\033[0m'
 
-# Emoji team flags: @superchat-flags auto|on|off.
-#   on   -> full emoji including team flags (force).
-#   off  -> ASCII only, no emoji.
-#   auto -> emoji on (the ball + en-dash), but team FLAGS depend on the terminal:
-#           non-macOS          -> ASCII (Linux emoji/flag glyphs are unreliable);
-#           macOS + tmux < 3.6  -> flags too (they render fine);
-#           macOS + tmux >= 3.6 -> ball/en-dash kept, FLAGS stripped. tmux 3.6+
-#           repaints a regional-indicator flag cluster on every redraw, so a
-#           scrolling flag flickers (the marquee re-emits each frame) and no
-#           escape sequence avoids it; the single-codepoint ball is unaffected.
-# Decided ONCE at startup: SEGF picks the wire variant, STRIP_FLAGS drops flag
-# emoji from it (jq gsub in parse_carousel). seg/segPlain are never mixed.
-tmux_ge_36() {   # 0 (true) when tmux >= 3.6 -- the versions that flicker flags
-  local v maj rest min
-  v="$(tmux -V 2>/dev/null)"; v="${v##* }"            # "tmux 3.6b" -> "3.6b"
-  maj="${v%%.*}"; rest="${v#*.}"; min="${rest%%[!0-9]*}"
-  case "$maj" in ""|*[!0-9]*) return 1 ;; esac        # unparseable -> assume < 3.6
-  case "$min" in ""|*[!0-9]*) min=0 ;; esac
-  [ "$maj" -gt 3 ] || { [ "$maj" -eq 3 ] && [ "$min" -ge 6 ]; }
-}
-SEGF="seg"; STRIP_FLAGS=0
-case "$(get_tmux_option @superchat-flags "$default_flags")" in
-  on)  SEGF="seg" ;;
-  off) SEGF="segPlain" ;;
-  *)   if [ "$(uname 2>/dev/null)" != "Darwin" ]; then SEGF="segPlain"
-       elif tmux_ge_36; then STRIP_FLAGS=1
-       fi ;;
-esac
-# Regional-indicator flag pair (+ one adjacent space), stripped from the emoji
-# variant when STRIP_FLAGS=1. Range is literal U+1F1E6..U+1F1FF bytes -- jq 1.7
-# rejects \u{}/\x{} escapes in regex.
-_RILO=$'\xf0\x9f\x87\xa6'; _RIHI=$'\xf0\x9f\x87\xbf'
-FLAG_RE=" [$_RILO-$_RIHI]{2}|[$_RILO-$_RIHI]{2} "
+# Emoji rendering: @ticker-emoji auto|on|off. off => ASCII-only segPlain variants;
+# auto/on => the emoji seg variants. Decided ONCE at startup — seg/segPlain are
+# never mixed within a run.
+case "$(get_tmux_option @ticker-emoji "$default_emoji")" in off) SEGF="segPlain";; *) SEGF="seg";; esac
 
 # Truecolor detection. Inside tmux $COLORTERM is frequently unset even when the
 # terminal supports 24-bit, which would drop us to a 16-color path that collapses
 # the rainbow palette into ~3 buckets. So: truecolor if $COLORTERM says so, OR if
 # the terminal exposes >=256 colors (tmux-256color/xterm-256color) — emitting 24-bit
-# then lets tmux map to the best the outer terminal can do. superchat.tmux also
+# then lets tmux map to the best the outer terminal can do. ticker.tmux also
 # enables the Tc/RGB passthrough so the colors arrive exact.
 TRUECOLOR=0
 case "$COLORTERM" in
@@ -101,7 +73,7 @@ sgr_compose() {
   fi
 }
 
-# WC tone palette (contract §6). Truecolor exact; the 16-color fallback is a FIXED
+# Carousel tone palette (contract §6). Truecolor exact; the 16-color fallback is a FIXED
 # table (pitch 32, gold 33, chalk 37, alert 31, dim 90) — sgr_compose's
 # nearest-channel guess would land gold/chalk/dim on the wrong codes.
 tone_sgr() {
@@ -115,13 +87,6 @@ tone_sgr() {
 }
 T_PITCH="$(tone_sgr 1E7A3C 32)"; T_GOLD="$(tone_sgr D4A017 33)"
 T_CHALK="$(tone_sgr F2F0E6 37)"; T_ALERT="$(tone_sgr E8413C 31)"; T_DIM="$(tone_sgr 9099A8 90)"
-# Goal flash: full line inverted, alert bg + chalk fg — the ONLY flash in the
-# product (paid styles keep their own distinct effects; nothing else ever blinks).
-if [ "$TRUECOLOR" = 1 ]; then
-  FLASH_SGR="$(printf '\033[48;2;232;65;60m\033[38;2;242;240;230m')"
-else
-  FLASH_SGR="$(printf '\033[41;97m')"
-fi
 
 # tone_of NAME — sets REPLY to the pre-composed SGR (no subshell; called at item
 # build time). Unknown tones degrade to chalk so newer servers stay renderable.
@@ -186,7 +151,7 @@ draw_frame_rainbow() {
 }
 
 # draw_frame_toned INDEX — the rainbow machinery generalized: CT[] maps each ribbon
-# CHAR to its segment's tone SGR (built once per item in build_wc_item), so
+# CHAR to its segment's tone SGR (built once per item in build_item), so
 # multi-segment items render multi-tone with no per-frame subshell work.
 draw_frame_toned() {
   local i="$1"
@@ -204,27 +169,13 @@ draw_frame_toned() {
   printf '\033[H %s%s\033[K' "$out" "$RST"
 }
 
-# draw_frame_flash — the ~1s goal invert: the current goal's text, static (readable
-# at a glance), padded to the window so the WHOLE line carries the alert bg.
-# Padding counts CHARS; double-width emoji can overshoot slightly — same accepted
-# stance as the scroll paths (\033[K cleans up after us).
-draw_frame_flash() {
-  local sz cols win out k len
-  sz=$(stty size 2>/dev/null); cols=${sz#* }; [ -n "$cols" ] || cols=80
-  win=$(( cols - 2 )); [ "$win" -lt 1 ] && win=1
-  len=${#ITEM_TEXT}; [ "$len" -gt "$win" ] && len=$win
-  out="${ITEM_TEXT:0:len}"; k=$len
-  while [ "$k" -lt "$win" ]; do out="${out} "; k=$(( k + 1 )); done
-  printf '\033[H %s%s%s\033[K' "$FLASH_SGR" "$out" "$RST"
-}
-
-# build_wc_item IDX — materialize one carousel item for the toned scroller, ONCE
-# per item (never in the frame loop). Splits WC_SEGS[IDX] ("tone US text US …")
-# and builds ITEM_TEXT (concatenated segments — the flash uses it), TONED_RIBBON
-# (text + dim separator) and CT[] (one SGR per ribbon char; ${#}/${:} are CHAR
-# semantics under the UTF-8 locale, so emoji and flags index cleanly).
-build_wc_item() {
-  local rest="${WC_SEGS[$1]}" tone t j L
+# build_item IDX — materialize one carousel item for the toned scroller, ONCE
+# per item (never in the frame loop). Splits CAR_SEGS[IDX] ("tone US text US …")
+# and builds ITEM_TEXT (concatenated segments), TONED_RIBBON (text + dim
+# separator) and CT[] (one SGR per ribbon char; ${#}/${:} are CHAR semantics
+# under the UTF-8 locale, so emoji index cleanly).
+build_item() {
+  local rest="${CAR_SEGS[$1]}" tone t j L
   ITEM_TEXT=""; CT=()
   while [ -n "$rest" ]; do
     case "$rest" in
@@ -251,15 +202,15 @@ build_wc_item() {
 # implode scrubs every control char from every field: C0 (including our
 # separator), DEL, and C1 U+0080–U+009F — U+009B is a one-byte CSI and U+0085 a
 # NEL, so they must never reach the terminal byte stream. The server sanitizes
-# these too; this scrub is defense-in-depth and must hold on its own. Missing
-# carousel / old server / jq error all land on wc_count=0 ⇒ v1.0 behavior.
+# these too; this scrub is defense-in-depth and must stand on its own. Missing
+# carousel / old server / jq error all land on car_count=0 ⇒ v1.0 behavior.
 parse_carousel() {
-  WC_KIND=(); WC_KEY=(); WC_SEGS=(); wc_count=0
+  CAR_KIND=(); CAR_KEY=(); CAR_SEGS=(); car_count=0
   local lines line kind rest key segs
-  lines="$(printf '%s' "$json" | jq -r --arg segf "$SEGF" --arg strip "$STRIP_FLAGS" --arg flagre "$FLAG_RE" '
+  lines="$(printf '%s' "$json" | jq -r --arg segf "$SEGF" '
     (.carousel // [])[]?
     | [ (.kind // ""), (.key // ""), ((.[$segf] // [])[]? | (.tone // ""), (.t // "")) ]
-    | map(tostring | (if $strip == "1" then gsub($flagre; "") else . end) | explode | map(if . < 32 or (. >= 127 and . <= 159) then 32 else . end) | implode)
+    | map(tostring | explode | map(if . < 32 or (. >= 127 and . <= 159) then 32 else . end) | implode)
     | join([31] | implode)' 2>/dev/null)"
   [ -n "$lines" ] || return 0
   while IFS= read -r line; do
@@ -270,38 +221,9 @@ parse_carousel() {
       *)       key="$rest"; segs="" ;;
     esac
     [ -n "$segs" ] || continue                       # no segments ⇒ nothing to render
-    WC_KIND+=( "$kind" ); WC_KEY+=( "$key" ); WC_SEGS+=( "$segs" )
-    wc_count=$(( wc_count + 1 ))
+    CAR_KIND+=( "$kind" ); CAR_KEY+=( "$key" ); CAR_SEGS+=( "$segs" )
+    car_count=$(( car_count + 1 ))
   done <<< "$lines"
-}
-
-# goal_seen KEY — membership test against the in-memory seen set. Plain indexed
-# array + string equality: bash 3.2 (macOS default) has no associative arrays,
-# and equality keeps untrusted keys out of any pattern/glob context.
-goal_seen() {
-  local k
-  for k in "${SEEN_GOALS[@]}"; do [ "$k" = "$1" ] && return 0; done
-  return 1
-}
-
-# check_goals — fire the flash for the first carousel goal this process hasn't
-# shown. Runs at fetch granularity (2s) ⇒ "immediate" interrupt of whatever is
-# dwelling. While a flash/hold is on screen, later goals stay unmarked and fire
-# right after it — one full moment per goal, no flash pile-up. Seen/expired goals
-# keep rotating as normal alert items while the server carries them.
-check_goals() {
-  case "$cur_type" in flash | hold) return 0 ;; esac
-  local gi=0
-  while [ "$gi" -lt "$wc_count" ]; do
-    if [ "${WC_KIND[$gi]}" = "goal" ] && ! goal_seen "${WC_KEY[$gi]}"; then
-      SEEN_GOALS+=( "${WC_KEY[$gi]}" )
-      build_wc_item "$gi"
-      cur_type="flash"; frames_left=$FLASH_FRAMES; f=0
-      return 0
-    fi
-    gi=$(( gi + 1 ))
-  done
-  return 0
 }
 
 # start_item_frames RIBBON_CHARS — dwell = one pass of the ribbon across the
@@ -315,22 +237,18 @@ start_item_frames() {
   [ "$frames_left" -gt 83 ] && frames_left=83
 }
 
-# advance_item — playlist step, called only when frames_left hits 0: flash → hold
-# (alert line for the rest of the 10s), otherwise 3 WC items then 1 slot item.
-# The slot item is the v1.0 paid/house path, untouched — its `i` keeps counting
-# across dwells so the message resumes scrolling where it left off.
+# advance_item — playlist step, called only when frames_left hits 0: 3 carousel
+# items then 1 slot item. The slot item is the v1.0 paid/house path, untouched —
+# its `i` keeps counting across dwells so the message resumes scrolling where it
+# left off.
 advance_item() {
-  if [ "$cur_type" = "flash" ]; then
-    cur_type="hold"; f=0; frames_left=$HOLD_FRAMES
-    return
-  fi
-  if [ "$wc_run" -lt 3 ] && [ "$wc_count" -gt 0 ]; then
-    build_wc_item $(( wc_pos % wc_count ))
-    wc_pos=$(( (wc_pos + 1) % wc_count )); wc_run=$(( wc_run + 1 ))
-    cur_type="wc"; f=0
+  if [ "$car_run" -lt 3 ] && [ "$car_count" -gt 0 ]; then
+    build_item $(( car_pos % car_count ))
+    car_pos=$(( (car_pos + 1) % car_count )); car_run=$(( car_run + 1 ))
+    cur_type="car"; f=0
     start_item_frames ${#TONED_RIBBON}
   else
-    cur_type="slot"; wc_run=0
+    cur_type="slot"; car_run=0
     start_item_frames $(( ${#text} + 7 ))            # +7: the "   •   " sep draw_frame appends
   fi
 }
@@ -339,16 +257,12 @@ last_beat=0; last_fetch=0; i=0; text=""
 bold=false; italic=false; rainbow=false
 color="$(sgr_compose '' '#4a7abb')"
 
-# Carousel playlist state — all in-memory: a fresh process re-learns goal keys by
-# design (the seen set only stops the SAME process flashing a key twice).
+# Carousel playlist state — all in-memory.
 FS="$(printf '\037')"               # US field separator (scrubbed from data in parse_carousel)
-WC_KIND=(); WC_KEY=(); WC_SEGS=(); wc_count=0
-SEEN_GOALS=()
-cur_type=""                          # "" pick-next | wc | slot | flash | hold
+CAR_KIND=(); CAR_KEY=(); CAR_SEGS=(); car_count=0
+cur_type=""                          # "" pick-next | car | slot
 frames_left=0; f=0                   # f = frame index within the current toned item
-wc_pos=0; wc_run=0                   # next WC index; WC items shown since last slot item
-FLASH_FRAMES=8                       # ~1s invert at the 0.12s frame rate
-HOLD_FRAMES=75                       # rest of the ~10s goal hold (8 + 75 ≈ 10s)
+car_pos=0; car_run=0                 # next carousel index; items shown since last slot item
 
 while :; do
   now=$(date +%s)
@@ -372,10 +286,9 @@ while :; do
       else
         color="$(sgr_compose "$attrs" "$hex")"
       fi
-      parse_carousel
-      check_goals
+      [ "$MARKETS" = "off" ] || parse_carousel
     elif [ -z "$text" ]; then
-      text="tmux-superchat"
+      text="tmux-ticker"
     fi
     last_fetch=$now
   fi
@@ -383,10 +296,9 @@ while :; do
     curl -fsS --max-time 2 -XPOST "$API/api/beat" -H "x-install-id: $IID" >/dev/null 2>&1 &
     last_beat=$now
   fi
-  if [ "$wc_count" -eq 0 ] && [ "$cur_type" != "flash" ] && [ "$cur_type" != "hold" ]; then
-    # No WC items ⇒ pure v1.0: continuous wrapped scroll of the slot message.
-    # (An in-flight goal flash/hold still completes off its cached build.)
-    cur_type=""; frames_left=0; wc_run=0
+  if [ "$car_count" -eq 0 ]; then
+    # No carousel items ⇒ pure v1.0: continuous wrapped scroll of the slot message.
+    cur_type=""; frames_left=0; car_run=0
     if [ "$rainbow" = "true" ]; then
       draw_frame_rainbow "$text" "$i"
     else
@@ -396,7 +308,6 @@ while :; do
   else
     [ "$frames_left" -le 0 ] && advance_item
     case "$cur_type" in
-      flash) draw_frame_flash ;;
       slot)
         if [ "$rainbow" = "true" ]; then
           draw_frame_rainbow "$text" "$i"
@@ -404,7 +315,7 @@ while :; do
           draw_frame "$text" "$color" "$i"
         fi
         i=$(( i + 1 )) ;;
-      *) draw_frame_toned "$f"; f=$(( f + 1 )) ;;   # wc items + the goal hold
+      *) draw_frame_toned "$f"; f=$(( f + 1 )) ;;   # carousel items
     esac
     frames_left=$(( frames_left - 1 ))
   fi

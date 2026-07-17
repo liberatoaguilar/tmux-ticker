@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # install_id.sh — generate/read a stable per-install terminal id.
-ID_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/tmux-superchat/id"
+ID_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/tmux-ticker/id"
 mkdir -p "$(dirname "$ID_FILE")"
 # Prefer uuidgen; else portable random hex (od/urandom, as in install.sh). Never
 # `date +%s%N` — BSD/macOS emit a literal "N", yielding malformed, collidable ids.

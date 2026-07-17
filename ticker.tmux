@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# superchat.tmux — TPM entry: hooks for all-windows presence + toggle keybind
+# ticker.tmux — TPM entry: hooks for all-windows presence + toggle keybind
 # Coexists with other pane-owning tmux plugins via orthogonal geometry,
 # distinct pane markers, and APPENDED hooks (-ga) so we don't clobber other plugins' hooks.
 CURRENT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 . "$CURRENT_DIR/scripts/variables.sh"; . "$CURRENT_DIR/scripts/helpers.sh"
 S="$CURRENT_DIR/scripts"
 
-[ "$(get_tmux_option @superchat-position "$default_position")" = "off" ] && exit 0
-key="$(get_tmux_option @superchat-toggle-key "$default_toggle_key")"
+[ "$(get_tmux_option @ticker-position "$default_position")" = "off" ] && exit 0
+key="$(get_tmux_option @ticker-toggle-key "$default_toggle_key")"
 
 # cross-window presence. Use -ga (APPEND) so we don't clobber other plugins' handlers on the
 # same hook names — tmux runs every appended command for that hook, in order. The hooks
