@@ -14,6 +14,9 @@ default_emoji="auto"                            # @ticker-emoji : auto | on | of
                                                 # auto/on ⇒ emoji seg variants.
 default_markets="on"                            # @ticker-markets : on | off — rotate the markets
                                                 # carousel between slot messages (off ⇒ slot only)
+default_symbols="NVDA,MSFT,AMD,TSLA"            # @ticker-symbols : comma-separated tickers the local
+                                                # fetcher quotes from Finnhub (needs FINNHUB_API_KEY)
+default_hero=""                                 # @ticker-hero : symbol pinned first with the gold ★
 
 # internal markers / options (namespaced to coexist with other plugins)
 MARQUEE_MARKER="@ticker_marquee"

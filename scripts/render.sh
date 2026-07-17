@@ -8,12 +8,15 @@
 # same flags the compose UI offers. We compose a full SGR sequence per frame so
 # every style actually renders in the terminal (v1.0 only honored color).
 #
-# Markets carousel: /api/slot may also carry `.carousel` — render-ready items
-# ({kind,key,seg[],segPlain[]}, tones pitch|gold|chalk|alert|dim). When present we
-# rotate 3 carousel items : 1 slot item (the slot keeps the exact v1.0 paid/house
-# render path above), each dwelling ~6-10s. Missing/empty carousel ⇒ pure v1.0
-# behavior, so old servers without the field keep working. @ticker-markets off
-# skips the carousel parse entirely (⇒ pure v1.0 slot scroll).
+# Markets carousel (v2): a local per-machine fetcher (quotes.sh) polls Finnhub with
+# the user's OWN key and writes a render-ready cache ($QCACHE); we read `.carousel`
+# from that file — render-ready items ({kind,key,seg[],segPlain[]}, tones
+# pitch|gold|chalk|alert|dim). Quotes never transit any Aguilabs server; the
+# server's /api/slot carousel is for the public web page only and is IGNORED here.
+# When the cache has items we rotate 3 carousel items : 1 slot item (the slot keeps
+# the exact v1.0 paid/house render path above), each dwelling ~6-10s. Missing/empty
+# cache ⇒ pure v1.0 behavior. @ticker-markets off (or empty @ticker-symbols) means
+# no fetcher is spawned and the carousel parse is skipped (⇒ pure v1.0 slot scroll).
 export LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
 CURRENT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 . "$CURRENT_DIR/variables.sh"; . "$CURRENT_DIR/helpers.sh"
@@ -22,8 +25,19 @@ API="$(get_tmux_option @ticker-api "$default_api")"
 POLL="$(get_tmux_option @ticker-poll-s "$default_poll_s")"
 FETCH="$(get_tmux_option @ticker-fetch-s "$default_fetch_s")"
 MARKETS="$(get_tmux_option @ticker-markets "$default_markets")"
+SYMBOLS="$(get_tmux_option @ticker-symbols "$default_symbols")"
+HERO="$(get_tmux_option @ticker-hero "$default_hero")"
 IID="$("$CURRENT_DIR/install_id.sh")"
 RST=$'\033[0m'
+
+# Local markets fetcher (v2): quotes.sh fetches quotes DIRECTLY from Finnhub with
+# the user's own FINNHUB_API_KEY (never via any Aguilabs server) and writes a
+# render-ready carousel cache we read. QCACHE is per-uid so distinct users on one
+# host never collide; its pidfile ("$QCACHE.pid") is the fetcher's singleton lock.
+# TMUX_SERVER_PID is the tmux server this renderer lives under — the fetcher exits
+# when that server dies, so we NEVER need to pkill it.
+QCACHE="${TMPDIR:-/tmp}/ticker_quotes_$(id -u).json"
+TMUX_SERVER_PID="$(tmux display-message -p '#{pid}')"
 
 # Emoji rendering: @ticker-emoji auto|on|off. off => ASCII-only segPlain variants;
 # auto/on => the emoji seg variants. Decided ONCE at startup — seg/segPlain are
@@ -101,6 +115,24 @@ tone_of() {
 }
 
 fetch() { curl -fsS --max-time 2 "$API/api/slot" 2>/dev/null; }
+
+# ensure_fetcher — keep the local quotes daemon alive. No-op when markets are off
+# or the user cleared their symbols. Otherwise, if the pidfile names no LIVE
+# process, (re)spawn quotes.sh detached: it fetches from Finnhub with the user's
+# own key and writes $QCACHE. quotes.sh is its own per-uid singleton (pidfile
+# guard, atomic writes — a rare double-start is harmless) and self-exits when
+# TMUX_SERVER_PID dies. We address it ONLY via its pidfile; never pkill.
+ensure_fetcher() {
+  [ "$MARKETS" = "off" ] && return 0
+  [ -n "$SYMBOLS" ] || return 0
+  local pid
+  if [ -f "${QCACHE}.pid" ]; then
+    pid="$(cat "${QCACHE}.pid" 2>/dev/null)"
+    [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && return 0
+  fi
+  "$CURRENT_DIR/quotes.sh" "$QCACHE" "$SYMBOLS" "$HERO" "$TMUX_SERVER_PID" >/dev/null 2>&1 &
+  disown 2>/dev/null || :
+}
 
 # draw_frame TEXT COLOR INDEX — one colored scroll frame; flicker-free (\033[H … \033[K).
 # Wraps the ribbon (text + separator) and slices a window of `cols-2` chars. COLOR is a
@@ -197,21 +229,21 @@ build_item() {
   while [ "$j" -lt "$L" ]; do CT+=( "$T_DIM" ); j=$(( j + 1 )); done
 }
 
-# parse_carousel — one jq pass flattens $json's .carousel into "kind US key US
-# tone US text…" lines (US = 0x1f, jq-built so no escape ambiguity). explode/
-# implode scrubs every control char from every field: C0 (including our
-# separator), DEL, and C1 U+0080–U+009F — U+009B is a one-byte CSI and U+0085 a
-# NEL, so they must never reach the terminal byte stream. The server sanitizes
-# these too; this scrub is defense-in-depth and must stand on its own. Missing
-# carousel / old server / jq error all land on car_count=0 ⇒ v1.0 behavior.
+# parse_carousel — one jq pass flattens the LOCAL cache file $QCACHE's .carousel
+# into "kind US key US tone US text…" lines (US = 0x1f, jq-built so no escape
+# ambiguity). explode/implode scrubs every control char from every field: C0
+# (including our separator), DEL, and C1 U+0080–U+009F — U+009B is a one-byte CSI
+# and U+0085 a NEL, so they must never reach the terminal byte stream. The cache is
+# locally generated, but the scrub STAYS as defense-in-depth and must stand on its
+# own. Missing/empty cache file / jq error all land on car_count=0 ⇒ v1.0 behavior.
 parse_carousel() {
   CAR_KIND=(); CAR_KEY=(); CAR_SEGS=(); car_count=0
   local lines line kind rest key segs
-  lines="$(printf '%s' "$json" | jq -r --arg segf "$SEGF" '
+  lines="$(jq -r --arg segf "$SEGF" '
     (.carousel // [])[]?
     | [ (.kind // ""), (.key // ""), ((.[$segf] // [])[]? | (.tone // ""), (.t // "")) ]
     | map(tostring | explode | map(if . < 32 or (. >= 127 and . <= 159) then 32 else . end) | implode)
-    | join([31] | implode)' 2>/dev/null)"
+    | join([31] | implode)' "$QCACHE" 2>/dev/null)"
   [ -n "$lines" ] || return 0
   while IFS= read -r line; do
     [ -n "$line" ] || continue
@@ -264,9 +296,11 @@ cur_type=""                          # "" pick-next | car | slot
 frames_left=0; f=0                   # f = frame index within the current toned item
 car_pos=0; car_run=0                 # next carousel index; items shown since last slot item
 
+ensure_fetcher                       # spawn the local quotes daemon at startup
 while :; do
   now=$(date +%s)
   if [ $((now - last_fetch)) -ge "${FETCH%.*}" ] || [ -z "$text" ]; then
+    ensure_fetcher                     # keep the local BYO-key quotes daemon alive
     json="$(fetch)"
     # jq is mandatory for SAFE JSON parsing: server text is only ever read as a jq
     # value and passed to printf as an ARGUMENT (never the format string, never
@@ -286,10 +320,13 @@ while :; do
       else
         color="$(sgr_compose "$attrs" "$hex")"
       fi
-      [ "$MARKETS" = "off" ] || parse_carousel
     elif [ -z "$text" ]; then
       text="tmux-ticker"
     fi
+    # Carousel comes from the LOCAL fetcher's cache now, independent of the server:
+    # refresh it every tick even when /api/slot is unreachable. @ticker-markets off
+    # ⇒ no parse ⇒ car_count=0 ⇒ pure v1.0 slot scroll. Missing cache ⇒ same degrade.
+    [ "$MARKETS" = "off" ] || parse_carousel
     last_fetch=$now
   fi
   if [ $((now - last_beat)) -ge 30 ]; then
