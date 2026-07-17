@@ -2,16 +2,29 @@
 
 Delayed stock quotes in your tmux status ribbon — every quote labeled with its delay.
 
-A one-row scrolling ticker pinned to the top of every tmux window. It polls a
-tmux-ticker feed and rotates delayed market quotes across the top of your terminal;
-between the quotes it renders a single global message slot (bold, italic, color,
-rainbow), and shows a house message when the slot is idle.
+A one-row scrolling ticker pinned to the top of every tmux window. It rotates delayed
+market quotes across the top of your terminal, fetched **directly by the plugin** — no
+server required for quotes at all; between the quotes it renders a single global message
+slot (bold, italic, color, rainbow) polled from a tmux-ticker server, and shows a house
+message when the slot is idle.
+
+Quotes need **no server at all**. The plugin polls [Finnhub](https://finnhub.io) directly
+with **your own** key. Setup:
+
+1. Sign up at [finnhub.io](https://finnhub.io) for a free API key.
+2. Make `FINNHUB_API_KEY` visible to the **tmux server** — either:
+   - `export FINNHUB_API_KEY=...` in your shell profile **before** starting tmux, or
+   - at runtime: `tmux set-environment -g FINNHUB_API_KEY ...`, then respawn the ticker
+     (toggle it off/on with `prefix + a`) so it picks up the key.
+
+No key? The ticker still runs, showing only the message slot.
 
 > [!IMPORTANT]
-> **Bring your own feed and API key.** There is no public hosted feed: quotes require a
-> self-hosted tmux-ticker server deployment configured with **your own** market-data API
-> key, with `@ticker-api` pointed at it. Quotes are for your own personal/internal use on
-> your own terminals; you are responsible for your data provider's terms of service.
+> Quotes are fetched **directly from your provider with your own key** — for your own
+> personal/internal use, on your own terminals. The server (`@ticker-api`) is used only
+> for the shared message slot, never for quotes. You are responsible for complying with
+> your data provider's terms of service. This plugin uses **Finnhub only** — no Twelve
+> Data (its free tier prohibits display).
 
 The client is **read-only and inert**: it fetches quotes and the current message over
 HTTPS and draws them as plain colored text. It never evaluates anything the server sends.
@@ -61,6 +74,8 @@ All options are set in `~/.tmux.conf` with `set -g`:
 | `@ticker-fetch-s` | `2` | re-fetch interval (seconds) |
 | `@ticker-emoji` | `auto` | `auto`\|`on`\|`off` — emoji glyphs in quote items. `off` is plain ASCII; `auto`/`on` use the emoji variants |
 | `@ticker-markets` | `on` | `on`\|`off` — rotate the markets carousel between slot messages. `off` shows the slot message only |
+| `@ticker-symbols` | `NVDA,MSFT,AMD,TSLA` | comma-separated symbols to fetch from Finnhub (max 12) |
+| `@ticker-hero` | *(empty)* | symbol to pin first in the carousel, marked with a gold ★ |
 
 ## Market data
 
