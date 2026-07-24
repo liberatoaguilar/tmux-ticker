@@ -13,8 +13,9 @@
 # from that file — render-ready items ({kind,key,seg[],segPlain[]}, tones
 # pitch|gold|chalk|alert|dim). Quotes never transit any Aguilabs server; the
 # server's /api/slot carousel is for the public web page only and is IGNORED here.
-# When the cache has items we rotate 3 carousel items : 1 slot item (the slot keeps
-# the exact v1.0 paid/house render path above), each dwelling ~6-10s. Missing/empty
+# When the cache has items we scroll EVERY quote together as one continuous ribbon
+# (STOCK1 · STOCK2 · STOCK3 …) for one full pass, then show 1 slot item (the slot
+# keeps the exact v1.0 paid/house render path above), alternating. Missing/empty
 # cache ⇒ pure v1.0 behavior. @ticker-markets off (or empty @ticker-symbols) means
 # no fetcher is spawned and the carousel parse is skipped (⇒ pure v1.0 slot scroll).
 export LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
@@ -183,7 +184,7 @@ draw_frame_rainbow() {
 }
 
 # draw_frame_toned INDEX — the rainbow machinery generalized: CT[] maps each ribbon
-# CHAR to its segment's tone SGR (built once per item in build_item), so
+# CHAR to its segment's tone SGR (built once per pass in build_all_items), so
 # multi-segment items render multi-tone with no per-frame subshell work.
 draw_frame_toned() {
   local i="$1"
@@ -201,30 +202,40 @@ draw_frame_toned() {
   printf '\033[H %s%s\033[K' "$out" "$RST"
 }
 
-# build_item IDX — materialize one carousel item for the toned scroller, ONCE
-# per item (never in the frame loop). Splits CAR_SEGS[IDX] ("tone US text US …")
-# and builds ITEM_TEXT (concatenated segments), TONED_RIBBON (text + dim
-# separator) and CT[] (one SGR per ribbon char; ${#}/${:} are CHAR semantics
-# under the UTF-8 locale, so emoji index cleanly).
-build_item() {
-  local rest="${CAR_SEGS[$1]}" tone t j L
-  ITEM_TEXT=""; CT=()
-  while [ -n "$rest" ]; do
-    case "$rest" in
-      *"$FS"*) tone="${rest%%"$FS"*}"; rest="${rest#*"$FS"}" ;;
-      *) break ;;                                    # dangling tone with no text — drop
-    esac
-    case "$rest" in
-      *"$FS"*) t="${rest%%"$FS"*}"; rest="${rest#*"$FS"}" ;;
-      *) t="$rest"; rest="" ;;
-    esac
-    tone_of "$tone"
-    L=${#t}; j=0
-    while [ "$j" -lt "$L" ]; do CT+=( "$REPLY" ); j=$(( j + 1 )); done
-    ITEM_TEXT="${ITEM_TEXT}${t}"
+# build_all_items — materialize EVERY carousel item into ONE toned ribbon, ONCE
+# per pass (never in the frame loop), so the marquee scrolls STOCK1 · STOCK2 ·
+# STOCK3 … together instead of one stock repeated across the whole bar. Walks each
+# CAR_SEGS entry ("tone US text US …"), joining adjacent items — and closing the
+# ribbon — with the same dim "   •   " separator, and builds ITEM_TEXT
+# (concatenated) and CT[] (one SGR per ribbon char). ${#}/${:} are CHAR semantics
+# under the UTF-8 locale, so emoji index cleanly.
+build_all_items() {
+  local rest tone t j L idx sep="   •   "
+  ITEM_TEXT=""; CT=(); idx=0
+  while [ "$idx" -lt "$car_count" ]; do
+    if [ "$idx" -gt 0 ]; then                        # dim separator between items
+      ITEM_TEXT="${ITEM_TEXT}${sep}"
+      L=${#sep}; j=0
+      while [ "$j" -lt "$L" ]; do CT+=( "$T_DIM" ); j=$(( j + 1 )); done
+    fi
+    rest="${CAR_SEGS[$idx]}"
+    while [ -n "$rest" ]; do
+      case "$rest" in
+        *"$FS"*) tone="${rest%%"$FS"*}"; rest="${rest#*"$FS"}" ;;
+        *) break ;;                                  # dangling tone with no text — drop
+      esac
+      case "$rest" in
+        *"$FS"*) t="${rest%%"$FS"*}"; rest="${rest#*"$FS"}" ;;
+        *) t="$rest"; rest="" ;;
+      esac
+      tone_of "$tone"
+      L=${#t}; j=0
+      while [ "$j" -lt "$L" ]; do CT+=( "$REPLY" ); j=$(( j + 1 )); done
+      ITEM_TEXT="${ITEM_TEXT}${t}"
+    done
+    idx=$(( idx + 1 ))
   done
-  local sep="   •   "
-  TONED_RIBBON="${ITEM_TEXT}${sep}"
+  TONED_RIBBON="${ITEM_TEXT}${sep}"                  # trailing sep: seamless wrap
   L=${#sep}; j=0
   while [ "$j" -lt "$L" ]; do CT+=( "$T_DIM" ); j=$(( j + 1 )); done
 }
@@ -269,18 +280,20 @@ start_item_frames() {
   [ "$frames_left" -gt 83 ] && frames_left=83
 }
 
-# advance_item — playlist step, called only when frames_left hits 0: 3 carousel
-# items then 1 slot item. The slot item is the v1.0 paid/house path, untouched —
-# its `i` keeps counting across dwells so the message resumes scrolling where it
-# left off.
+# advance_item — playlist step, called only when frames_left hits 0. Alternates ONE
+# full pass of the combined all-stocks ribbon (every quote scrolling together) with
+# ONE slot item. The slot item is the v1.0 paid/house path, untouched — its `i`
+# keeps counting across dwells so the message resumes scrolling where it left off.
+# The carousel dwell is the whole ribbon's length so every stock scrolls past once
+# (min 50 frames for the degenerate single-item / closed-market case).
 advance_item() {
-  if [ "$car_run" -lt 3 ] && [ "$car_count" -gt 0 ]; then
-    build_item $(( car_pos % car_count ))
-    car_pos=$(( (car_pos + 1) % car_count )); car_run=$(( car_run + 1 ))
+  if [ "$cur_type" != "car" ] && [ "$car_count" -gt 0 ]; then
+    build_all_items
     cur_type="car"; f=0
-    start_item_frames ${#TONED_RIBBON}
+    frames_left=${#TONED_RIBBON}
+    [ "$frames_left" -lt 50 ] && frames_left=50
   else
-    cur_type="slot"; car_run=0
+    cur_type="slot"
     start_item_frames $(( ${#text} + 7 ))            # +7: the "   •   " sep draw_frame appends
   fi
 }
@@ -292,9 +305,8 @@ color="$(sgr_compose '' '#4a7abb')"
 # Carousel playlist state — all in-memory.
 FS="$(printf '\037')"               # US field separator (scrubbed from data in parse_carousel)
 CAR_KIND=(); CAR_KEY=(); CAR_SEGS=(); car_count=0
-cur_type=""                          # "" pick-next | car | slot
+cur_type=""                          # "" pick-next | car | slot (also the car/slot toggle)
 frames_left=0; f=0                   # f = frame index within the current toned item
-car_pos=0; car_run=0                 # next carousel index; items shown since last slot item
 
 ensure_fetcher                       # spawn the local quotes daemon at startup
 while :; do
@@ -335,7 +347,7 @@ while :; do
   fi
   if [ "$car_count" -eq 0 ]; then
     # No carousel items ⇒ pure v1.0: continuous wrapped scroll of the slot message.
-    cur_type=""; frames_left=0; car_run=0
+    cur_type=""; frames_left=0
     if [ "$rainbow" = "true" ]; then
       draw_frame_rainbow "$text" "$i"
     else
