@@ -28,7 +28,7 @@ FETCH="$(get_tmux_option @ticker-fetch-s "$default_fetch_s")"
 MARKETS="$(get_tmux_option @ticker-markets "$default_markets")"
 SYMBOLS="$(get_tmux_option @ticker-symbols "$default_symbols")"
 HERO="$(get_tmux_option @ticker-hero "$default_hero")"
-IID="$("$CURRENT_DIR/install_id.sh")"
+. "$CURRENT_DIR/install_id.sh"
 RST=$'\033[0m'
 
 # Local markets fetcher (v2): quotes.sh fetches quotes DIRECTLY from Finnhub with
@@ -342,7 +342,7 @@ while :; do
     last_fetch=$now
   fi
   if [ $((now - last_beat)) -ge 30 ]; then
-    curl -fsS --max-time 2 -XPOST "$API/api/beat" -H "x-install-id: $IID" >/dev/null 2>&1 &
+    ticker_beat_once "$API" >/dev/null 2>&1 &
     last_beat=$now
   fi
   if [ "$car_count" -eq 0 ]; then
