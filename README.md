@@ -93,6 +93,26 @@ informational purposes only and are **not investment advice**.
 `set-hook -ga` (append), so it coexists with other tmux plugins that own a different
 pane region — load order doesn't matter and it won't clobber their hooks.
 
+## The client token contract
+
+This client has no account, so its presence identity is **server-issued**: it never
+names the row it writes. `install.sh` fires one anonymous install event and the
+server mints an id, returning `{"token":"t1.<id>.<sig>"}`; the client stores it
+`0600` at `$XDG_CONFIG_HOME/tmux-ticker/token` and echoes it on every `/api/beat` as
+`x-ticker-token`. A beat that carries no token gets a `401` carrying a freshly minted
+one — the client stores that token and its next beat (~30 s later) is counted. That
+401 is the self-healing path: an install done offline, or one that predates the
+contract, converts itself with no user action. The retired `x-install-id` header is
+never sent and never read.
+
+This lives in [`scripts/install_id.sh`](./scripts/install_id.sh) (the token store
+plus `ticker_beat_once`, sourced by [`scripts/render.sh`](./scripts/render.sh)) and
+the root [`install.sh`](./install.sh). Verify it without a network:
+
+```bash
+bash scripts/dev/token_harness.sh   # exit 0 = the whole contract holds
+```
+
 ## Uninstall
 
 ```bash
